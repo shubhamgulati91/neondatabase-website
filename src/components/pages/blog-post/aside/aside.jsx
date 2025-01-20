@@ -15,14 +15,14 @@ const Aside = ({ className, title, slug, authors, posts }) => (
           Posted by
         </h3>
         <div className="flex flex-col space-y-4">
-          {authors.map(({ author }) => {
+          {authors.map(({ author }, index) => {
             const Tag = author.postAuthor?.url ? Link : 'div';
             const isExternal =
               author.postAuthor?.url?.startsWith('http') ||
               !author.postAuthor?.url?.includes(process.env.NEXT_PUBLIC_DEFAULT_SITE_URL);
             return (
               <Tag
-                className="group flex items-center space-x-2.5"
+                className="group flex items-start space-x-2.5"
                 to={author.postAuthor?.url}
                 key={author.title}
                 target={isExternal ? '_blank' : undefined}
@@ -38,13 +38,14 @@ const Aside = ({ className, title, slug, authors, posts }) => (
                 <div className="flex flex-col">
                   <span
                     className={clsx(
-                      'font-semibold leading-none tracking-[0.02em] transition-colors duration-200',
+                      index === 0 && 'post-author',
+                      'font-semibold leading-dense tracking-[-0.02em] transition-colors duration-200',
                       { 'group-hover:text-green-45': author.postAuthor?.url }
                     )}
                   >
                     {author.title}
                   </span>
-                  <span className="mt-0.5 text-sm leading-tight tracking-[-0.02em] text-gray-new-70">
+                  <span className="mt-1 text-sm leading-dense tracking-[-0.02em] text-gray-new-70">
                     {author.postAuthor?.role}
                   </span>
                 </div>
@@ -70,7 +71,7 @@ const Aside = ({ className, title, slug, authors, posts }) => (
           <Link className="group" to={`${LINKS.blog}/${slug}`}>
             <article className="flex items-center space-x-3">
               <div>
-                <h1 className="line-clamp-2 font-medium leading-tight tracking-[-0.02em] transition-colors duration-200 group-hover:text-green-45">
+                <h1 className="line-clamp-2 font-title font-medium leading-tight tracking-[-0.02em] transition-colors duration-200 group-hover:text-green-45">
                   {title}
                 </h1>
                 <span className="mt-1.5 text-sm leading-none tracking-[-0.02em] text-gray-new-80">

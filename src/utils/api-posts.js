@@ -1,5 +1,7 @@
+import { cache } from 'react';
+
 import { BLOG_POSTS_PER_PAGE } from 'constants/blog';
-import { gql, graphQLClient, graphQLClientAdmin } from 'lib/graphQLClient';
+import { gql, graphQLClientAdmin, fetchGraphQL, graphQLClient } from 'lib/graphQLClient';
 
 import getAuthToken from './api-auth';
 
@@ -17,30 +19,36 @@ const POST_SEO_FRAGMENT = gql`
   }
 `;
 
-const getAllWpBlogCategories = async () => {
+const getAllWpBlogCategories = cache(async () => {
   const categoriesQuery = gql`
     query Categories {
       categories {
         nodes {
           name
           slug
+          posts {
+            nodes {
+              id
+            }
+          }
         }
       }
     }
   `;
-  const data = await graphQLClient.request(categoriesQuery);
+  const data = await fetchGraphQL(graphQLClient).request(categoriesQuery);
   const filteredCategories = data?.categories?.nodes.filter(
-    (category) => category.slug !== 'uncategorized'
+    (category) => category.slug !== 'uncategorized' && category.posts.nodes.length > 0
   );
 
   return [...filteredCategories, { name: 'All posts', slug: 'all-posts' }];
-};
+});
 
-const getWpPostsByCategorySlug = async (slug) => {
+const fetchWpPostsByCategorySlug = async (slug, after) => {
   const postsQuery = gql`
-    query Query($categoryName: String!, $first: Int!) {
+    query Query($categoryName: String!, $first: Int!, $after: String) {
       posts(
         first: $first
+        after: $after
         where: { categoryName: $categoryName, orderby: { field: DATE, order: DESC } }
       ) {
         nodes {
@@ -69,13 +77,17 @@ const getWpPostsByCategorySlug = async (slug) => {
             }
           }
         }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
       }
     }
   `;
 
   const allPostsQuery = gql`
-    query AllPosts($first: Int!) {
-      posts(first: $first, where: { orderby: { field: DATE, order: DESC } }) {
+    query AllPosts($first: Int!, $after: String) {
+      posts(first: $first, after: $after, where: { orderby: { field: DATE, order: DESC } }) {
         nodes {
           categories {
             nodes {
@@ -110,28 +122,50 @@ const getWpPostsByCategorySlug = async (slug) => {
             }
           }
         }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
       }
     }
   `;
 
   if (slug === 'all-posts') {
-    const allPostsData = await graphQLClient.request(allPostsQuery, {
+    const allPostsData = await fetchGraphQL(graphQLClient).request(allPostsQuery, {
       first: BLOG_POSTS_PER_PAGE,
+      after,
     });
 
-    return allPostsData?.posts?.nodes;
+    return allPostsData?.posts;
   }
   const categoryName = slug.charAt(0).toUpperCase() + slug.slice(1);
 
-  const data = await graphQLClient.request(postsQuery, {
+  const data = await fetchGraphQL(graphQLClient).request(postsQuery, {
     first: BLOG_POSTS_PER_PAGE,
+    after,
     categoryName,
   });
 
-  return data?.posts?.nodes;
+  return data?.posts;
 };
 
-const getWpBlogPage = async () => {
+const getWpPostsByCategorySlug = cache(async (slug) => {
+  let allPosts = [];
+  let afterCursor = null;
+
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const { nodes: posts, pageInfo } = await fetchWpPostsByCategorySlug(slug, afterCursor);
+
+    allPosts = allPosts.concat(posts);
+    if (!pageInfo.hasNextPage) break;
+    afterCursor = pageInfo.endCursor;
+  }
+
+  return allPosts;
+});
+
+const getWpBlogPage = cache(async () => {
   const blogPageQuery = gql`
     query BlogPage {
       page(idType: URI, id: "blog") {
@@ -148,6 +182,36 @@ const getWpBlogPage = async () => {
                         slug
                       }
                     }
+                    title(format: RENDERED)
+                    slug
+                    date
+                    pageBlogPost {
+                      largeCover {
+                        altText
+                        mediaItemUrl
+                      }
+                      authors {
+                        author {
+                          ... on PostAuthor {
+                            title
+                            postAuthor {
+                              role
+                              url
+                              image {
+                                altText
+                                mediaItemUrl
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              workflowsFeaturedPosts {
+                post {
+                  ... on Post {
                     title(format: RENDERED)
                     slug
                     date
@@ -206,6 +270,66 @@ const getWpBlogPage = async () => {
                 }
               }
               communityFeaturedPosts {
+                post {
+                  ... on Post {
+                    title(format: RENDERED)
+                    slug
+                    date
+                    pageBlogPost {
+                      largeCover {
+                        altText
+                        mediaItemUrl
+                      }
+                      authors {
+                        author {
+                          ... on PostAuthor {
+                            title
+                            postAuthor {
+                              role
+                              url
+                              image {
+                                altText
+                                mediaItemUrl
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              postgresFeaturedPosts {
+                post {
+                  ... on Post {
+                    title(format: RENDERED)
+                    slug
+                    date
+                    pageBlogPost {
+                      largeCover {
+                        altText
+                        mediaItemUrl
+                      }
+                      authors {
+                        author {
+                          ... on PostAuthor {
+                            title
+                            postAuthor {
+                              role
+                              url
+                              image {
+                                altText
+                                mediaItemUrl
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              aiFeaturedPosts {
                 post {
                   ... on Post {
                     title(format: RENDERED)
@@ -313,15 +437,15 @@ const getWpBlogPage = async () => {
       }
     }
   `;
-  const data = await graphQLClient.request(blogPageQuery);
+  const data = await fetchGraphQL(graphQLClient).request(blogPageQuery);
 
   return data?.page?.template?.pageBlog;
-};
+});
 
-const getAllWpPosts = async () => {
+const fetchAllWpPosts = async (after) => {
   const allPostsQuery = gql`
-    query AllPosts($first: Int!) {
-      posts(first: $first) {
+    query AllPosts($first: Int!, $after: String) {
+      posts(first: $first, after: $after) {
         nodes {
           categories {
             nodes {
@@ -329,10 +453,12 @@ const getAllWpPosts = async () => {
               slug
             }
           }
+          modifiedGmt
           excerpt
           slug
           title(format: RENDERED)
           date
+          content(format: RENDERED)
           pageBlogPost {
             largeCover {
               altText
@@ -356,17 +482,38 @@ const getAllWpPosts = async () => {
             }
           }
         }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
       }
     }
   `;
-  const data = await graphQLClient.request(allPostsQuery, {
+  const data = await fetchGraphQL(graphQLClient).request(allPostsQuery, {
     first: BLOG_POSTS_PER_PAGE,
+    after,
   });
 
-  return data?.posts?.nodes;
+  return data?.posts;
 };
 
-const getWpPostBySlug = async (slug) => {
+const getAllWpPosts = cache(async () => {
+  let allPosts = [];
+  let afterCursor = null;
+
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const { nodes: posts, pageInfo } = await fetchAllWpPosts(afterCursor);
+
+    allPosts = allPosts.concat(posts);
+    if (!pageInfo.hasNextPage) break;
+    afterCursor = pageInfo.endCursor;
+  }
+
+  return allPosts;
+});
+
+const getWpPostBySlug = cache(async (slug) => {
   const postBySlugQuery = gql`
     query PostBySlug($id: ID!) {
       post(id: $id, idType: URI) {
@@ -407,7 +554,6 @@ const getWpPostBySlug = async (slug) => {
         }
         ...wpPostSeo
       }
-
       posts(first: 4, where: { orderby: { field: DATE, order: DESC } }) {
         nodes {
           categories {
@@ -448,7 +594,7 @@ const getWpPostBySlug = async (slug) => {
     ${POST_SEO_FRAGMENT}
   `;
 
-  const data = await graphQLClient.request(postBySlugQuery, { id: slug });
+  const data = await fetchGraphQL(graphQLClient).request(postBySlugQuery, { id: slug });
 
   const sortedPosts = data?.posts?.nodes.filter((post) => post.slug !== slug).slice(0, 3);
 
@@ -456,11 +602,10 @@ const getWpPostBySlug = async (slug) => {
     post: data?.post,
     relatedPosts: sortedPosts,
   };
-};
+});
 
 // Query that executes when user requests a preview on a CMS,
 // the difference from a standard post query is that it uses Admin token to access unpublished posts and revisions of published posts
-
 const getWpPreviewPostData = async (id, status) => {
   const {
     refreshJwtAuthToken: { authToken },
@@ -682,12 +827,87 @@ const getWpPreviewPost = async (id) => {
   return graphQLClientAdmin(authToken).request(findPreviewPostQuery, { id });
 };
 
+const getAllWpCaseStudiesPosts = cache(async () => {
+  const caseStudiesQuery = gql`
+    query CaseStudies {
+      caseStudies(where: { orderby: { field: DATE, order: ASC } }, first: 100) {
+        nodes {
+          id
+          title(format: RENDERED)
+          caseStudyPost {
+            isFeatured
+            logo {
+              mediaItemUrl
+              mediaDetails {
+                width
+                height
+              }
+            }
+            quote
+            author {
+              name
+              post
+            }
+            isInternal
+            externalUrl
+            post {
+              ... on Post {
+                slug
+              }
+            }
+          }
+          caseStudiesCategories {
+            nodes {
+              slug
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await fetchGraphQL(graphQLClient).request(caseStudiesQuery);
+
+  return data?.caseStudies?.nodes;
+});
+
+const getAllWpCaseStudiesCategories = cache(async () => {
+  const categoriesQuery = gql`
+    query CaseStudiesCategories {
+      caseStudiesCategories {
+        nodes {
+          slug
+          name
+          caseStudyCategory {
+            featuredCaseStudy {
+              ... on CaseStudy {
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await fetchGraphQL(graphQLClient).request(categoriesQuery);
+  const categories = data?.caseStudiesCategories?.nodes;
+  const updatedCategories = categories.map((category) => ({
+    ...category,
+    featuredCaseStudy: category.caseStudyCategory?.featuredCaseStudy?.id || null,
+  }));
+
+  return [{ name: 'All', slug: 'all' }, ...updatedCategories];
+});
+
 export {
-  getAllWpPosts,
-  getWpPostBySlug,
-  getWpPreviewPostData,
-  getWpPreviewPost,
-  getWpBlogPage,
+  fetchAllWpPosts,
   getAllWpBlogCategories,
+  getAllWpCaseStudiesPosts,
+  getAllWpCaseStudiesCategories,
+  getAllWpPosts,
+  getWpBlogPage,
+  getWpPostBySlug,
   getWpPostsByCategorySlug,
+  getWpPreviewPost,
+  getWpPreviewPostData,
 };

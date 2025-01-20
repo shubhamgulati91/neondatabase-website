@@ -2,8 +2,8 @@ import clsx from 'clsx';
 import { notFound } from 'next/navigation';
 
 import BlogPostCard from 'components/pages/blog/blog-post-card';
-import LoadMorePosts from 'components/pages/blog/load-more-posts';
 import SubscribeForm from 'components/pages/blog-post/subscribe-form';
+import LoadMorePosts from 'components/shared/load-more-posts';
 import { BLOG_CATEGORY_BASE_PATH } from 'constants/blog';
 import { getBlogCategoryDescription } from 'constants/seo-data';
 import { getAllWpBlogCategories, getWpPostsByCategorySlug } from 'utils/api-posts';
@@ -14,7 +14,8 @@ const generateBlogTitle = (category) => {
   return `${category.name} Blog`;
 };
 
-export default async function BlogCategoryPage({ params: { slug } }) {
+// eslint-disable-next-line react/prop-types
+const BlogCategoryPage = async ({ params: { slug } }) => {
   const categories = await getAllWpBlogCategories();
   const posts = await getWpPostsByCategorySlug(slug);
   const category = categories.find((cat) => cat.slug === slug);
@@ -24,7 +25,7 @@ export default async function BlogCategoryPage({ params: { slug } }) {
   return (
     <>
       <h1 className="sr-only">{generateBlogTitle(category)}</h1>
-      <div className="grid grid-cols-3 gap-x-10 gap-y-16 2xl:gap-y-12 xl:gap-x-6 xl:gap-y-10 md:grid-cols-2 md:gap-y-5 sm:grid-cols-1">
+      <div className="dark grid grid-cols-3 gap-x-7 gap-y-16 2xl:gap-y-12 xl:gap-x-6 xl:gap-y-10 md:grid-cols-2 md:gap-y-5 sm:grid-cols-1">
         {category.slug === 'all-posts' ? (
           <LoadMorePosts defaultCountPosts={13} countToAdd={12}>
             {posts.map((post, index) => (
@@ -58,7 +59,7 @@ export default async function BlogCategoryPage({ params: { slug } }) {
       <SubscribeForm size="md" />
     </>
   );
-}
+};
 
 export async function generateMetadata({ params }) {
   const categories = await getAllWpBlogCategories();
@@ -83,3 +84,5 @@ export async function generateStaticParams() {
 }
 
 export const revalidate = 300;
+
+export default BlogCategoryPage;
